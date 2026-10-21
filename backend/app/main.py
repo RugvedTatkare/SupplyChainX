@@ -111,12 +111,11 @@ def _dashboard_data() -> dict[str, Any]:
             """)]
             inventory_rows = [dict(row) for row in conn.execute("""
                 SELECT i.inventory_snapshot_id, i.snapshot_date, i.warehouse_id, i.product_id,
-                       i.supplier_id, i.estimated_daily_demand, i.current_stock, i.reorder_point,
-                       i.days_of_cover, i.supplier_lead_time_days, i.inventory_risk_score,
-                       i.inventory_risk_level, i.data_origin, i.synthetic_stock_scenario,
-                       p.product_name
+                       i.product_id AS product_name, i.supplier_id, i.estimated_daily_demand,
+                       i.current_stock, i.reorder_point, i.days_of_cover,
+                       i.supplier_lead_time_days, i.inventory_risk_score,
+                       i.inventory_risk_level, i.data_origin, i.synthetic_stock_scenario
                 FROM inventory_snapshots i
-                LEFT JOIN products p ON p.product_id = i.product_id
                 WHERE i.snapshot_date = ?
                 ORDER BY i.inventory_risk_score DESC LIMIT 40
             """, (latest_snapshot,))]
