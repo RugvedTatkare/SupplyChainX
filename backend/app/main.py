@@ -31,7 +31,7 @@ DEFAULT_DB = Path(__file__).resolve().parents[1] / "data" / "SupplyChainX_Final_
 def _dashboard_data() -> dict[str, Any]:
     """Read dashboard metrics from the configured local SQLite database."""
     db_path = Path(os.environ.get("SUPPLYCHAINX_DB_PATH", str(DEFAULT_DB))).expanduser()
-    empty: dict[str, Any] = {"kpis": {}, "trend": [], "suppliers": [], "risk_signals": []}
+    empty: dict[str, Any] = {"kpis": {}, "trend": [], "suppliers": [], "shipments": [], "inventory": [], "risk_signals": []}
     if not db_path.is_file():
         return {
             **empty,
@@ -101,6 +101,30 @@ def _dashboard_data() -> dict[str, Any]:
                 row["risk_score"] = round(float(row["risk_score"] or 0), 1)
                 row["late_delivery_rate"] = round(float(row["late_delivery_rate"] or 0) * 100, 1)
                 row["risk_level"] = str(row["risk_level"] or "UNKNOWN").upper()
+            shipments_recent = [dict(row) for row in conn.execute("""
+                SELECT shipment_id, order_id, supplier_count, warehouse_id, order_country,
+                       order_region, ship_datetime, scheduled_shipping_days, actual_shipping_days,
+                       delivery_delay_days, delivery_status, late_delivery_risk, shipping_mode, shipment_status
+                FROM shipments
+                WHERE COALESCE(shipment_status, '') NOT LIKE '%CANCEL%'
+                ORDER BY ship_datetime DESC LIMIT 40
+            """)]
+            inventory_rows = [dict(row) for row in conn.execute("""
+                SELECT i.inventory_snapshot_id, i.snapshot_date, i.warehouse_id, i.product_id,
+                       i.supplier_id, i.estimated_daily_demand, i.current_stock, i.reorder_point,
+                       i.days_of_cover, i.supplier_lead_time_days, i.inventory_risk_score,
+                       i.inventory_risk_level, i.data_origin, i.synthetic_stock_scenario,
+                       p.product_name
+                FROM inventory_snapshots i
+                LEFT JOIN products p ON p.product_id = i.product_id
+                WHERE i.snapshot_date = ?
+                ORDER BY i.inventory_risk_score DESC LIMIT 40
+            """, (latest_snapshot,))]
+            for row in inventory_rows:
+                for key in ("estimated_daily_demand", "current_stock", "reorder_point", "days_of_cover",
+                            "supplier_lead_time_days", "inventory_risk_score"):
+                    if row.get(key) is not None:
+                        row[key] = round(float(row[key]), 2)
             signals = [dict(row) for row in conn.execute("""
                 SELECT risk_event_id, entity_type, entity_id, risk_type, risk_score,
                        risk_level, explanation, event_date, data_origin
