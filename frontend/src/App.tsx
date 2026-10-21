@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  Activity, AlertTriangle, ArrowDownRight, ArrowUpRight, Boxes, ChevronDown,
+  Activity, AlertTriangle, Boxes, ChevronDown,
   CircleHelp, Clock3, Download, Factory, LayoutDashboard, Menu, PackageCheck,
   Search, Settings2, ShieldAlert, Truck, X,
 } from 'lucide-react';
