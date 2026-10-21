@@ -104,6 +104,8 @@ function App() {
     return matchesQuery && matchesRisk;
   }), [query, riskFilter, sourceSuppliers]);
 
+  const sourceSignals = dashboardData?.data_status === 'connected' ? dashboardData.risk_signals : [];
+
   const navItems = [
     { label: 'Overview', icon: LayoutDashboard },
     { label: 'Supplier Risk', icon: Factory },
@@ -224,10 +226,10 @@ function App() {
               <div className="chart-legend"><span><i className="legend-dot ontime" />On-time deliveries</span><span><i className="legend-dot delayed" />Delayed deliveries</span></div>
               <div className="chart-wrap">
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={dashboardData?.data_status === 'connected' ? dashboardData.trend.map((row) => ({ month: row.month, onTime: row.on_time_rate, delayed: row.delayed })) : fallbackTrend} margin={{ top: 8, right: 10, left: -20, bottom: 0 }}>
+                  <LineChart data={dashboardData?.data_status === 'connected' ? dashboardData.trend.map((row) => ({ month: row.month, onTime: row.on_time_rate, delayed: Number((100 - row.on_time_rate).toFixed(1)), shipments: row.shipments })) : fallbackTrend} margin={{ top: 8, right: 10, left: -20, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 5" vertical={false} stroke="#e9edf3" />
                     <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: '#8993a5', fontSize: 11 }} dy={9} />
-                    <YAxis domain={[70, 100]} axisLine={false} tickLine={false} tick={{ fill: '#8993a5', fontSize: 11 }} tickFormatter={(v) => `${v}%`} />
+                    <YAxis domain={[0, 100]} axisLine={false} tickLine={false} tick={{ fill: '#8993a5', fontSize: 11 }} tickFormatter={(v) => `${v}%`} />
                     <Tooltip contentStyle={{ border: '1px solid #e5eaf1', borderRadius: 10, boxShadow: '0 8px 25px #17243b12' }} />
                     <Line type="monotone" dataKey="onTime" name="On-time" stroke="#277c70" strokeWidth={2.7} dot={{ r: 3.5, fill: '#277c70', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 5 }} />
                     <Line type="monotone" dataKey="delayed" name="Delayed" stroke="#e2a05a" strokeWidth={2.3} strokeDasharray="5 5" dot={{ r: 3, fill: '#e2a05a', strokeWidth: 2, stroke: '#fff' }} />
@@ -240,12 +242,20 @@ function App() {
             <section className="panel signals-panel">
               <div className="panel-heading"><div><h3>Priority risk signals</h3><p>Examples of explainable risk flags</p></div><button className="text-link" onClick={() => setActive('Risk Signals')}>View all <span>→</span></button></div>
               <div className="signal-list">
-                <div className="signal-item"><div className="signal-mark signal-red"><AlertTriangle size={17} /></div><div className="signal-copy"><strong>Delivery consistency</strong><p>Supplier delay rate above demo threshold</p><small>SUP-001 · Northstar Components</small></div><span className="severity sev-high">High</span></div>
-                <div className="signal-item"><div className="signal-mark signal-amber"><Clock3 size={17} /></div><div className="signal-copy"><strong>Lead-time variability</strong><p>Observed delivery times vary materially</p><small>SUP-014 · Atlas Industrial Co.</small></div><span className="severity sev-high">High</span></div>
-                <div className="signal-item"><div className="signal-mark signal-purple"><Boxes size={17} /></div><div className="signal-copy"><strong>Inventory concentration</strong><p>Illustrative exposure in a single category</p><small>Scenario · Components</small></div><span className="severity sev-med">Medium</span></div>
-                <div className="signal-item"><div className="signal-mark signal-blue"><Truck size={17} /></div><div className="signal-copy"><strong>Transit delay cluster</strong><p>Historical deliveries share delay patterns</p><small>Historical shipment subset</small></div><span className="severity sev-med">Medium</span></div>
+                {dashboardData?.data_status === 'connected' ? sourceSignals.slice(0, 4).map((signal) => {
+                  const level = signal.risk_level.toLowerCase();
+                  const mark = signal.entity_type === 'INVENTORY' ? 'signal-purple' : level === 'critical' || level === 'high' ? 'signal-red' : 'signal-amber';
+                  return <div className="signal-item" key={signal.risk_event_id}>
+                    <div className={`signal-mark ${mark}`}>{signal.entity_type === 'INVENTORY' ? <Boxes size={17} /> : <AlertTriangle size={17} />}</div>
+                    <div className="signal-copy"><strong>{signal.risk_type.replaceAll('_', ' ')}</strong><p>{signal.explanation}</p><small>{signal.entity_type} · {signal.entity_id} · {signal.event_date.slice(0, 10)}</small></div>
+                    <span className={`severity ${level === 'critical' || level === 'high' ? 'sev-high' : 'sev-med'}`}>{signal.risk_level}</span>
+                  </div>;
+                }) : <>
+                  <div className="signal-item"><div className="signal-mark signal-red"><AlertTriangle size={17} /></div><div className="signal-copy"><strong>Delivery consistency</strong><p>Supplier delay rate above demo threshold</p><small>Illustrative fallback signal</small></div><span className="severity sev-high">High</span></div>
+                  <div className="signal-item"><div className="signal-mark signal-amber"><Clock3 size={17} /></div><div className="signal-copy"><strong>Lead-time variability</strong><p>Observed delivery times vary materially</p><small>Illustrative fallback signal</small></div><span className="severity sev-high">High</span></div>
+                </>}
               </div>
-              <div className="signals-foot"><ShieldAlert size={15} /><span>Rules are illustrative, not live alerts.</span></div>
+              <div className="signals-foot"><ShieldAlert size={15} /><span>{dashboardData?.data_status === 'connected' ? 'Database risk events; synthetic scenarios are labelled.' : 'Rules are illustrative, not live alerts.'}</span></div>
             </section>
           </div>
 
@@ -266,7 +276,7 @@ function App() {
               </table>
               {visibleSuppliers.length === 0 && <div className="empty-state">No suppliers match the current filters.</div>}
             </div>
-            <div className="table-footer"><span>Showing <strong>{visibleSuppliers.length}</strong> of <strong>{suppliers.length}</strong> illustrative suppliers</span><span>Demo cohort <b>·</b> Scores 0–100</span></div>
+            <div className="table-footer"><span>Showing <strong>{visibleSuppliers.length}</strong> of <strong>{sourceSuppliers.length}</strong> {dashboardData?.data_status === 'connected' ? 'database suppliers' : 'illustrative suppliers'}</span><span>{dashboardData?.data_status === 'connected' ? 'Historical / synthetic-labelled dataset' : 'Demo cohort'} <b>·</b> Scores 0–100</span></div>
           </section>
 
           <footer className="page-footer"><span>© 2026 SupplyChainX <span className="footer-dot">·</span> Supply chain risk intelligence</span><span>Foundation build <b>0.1.0</b> <span className="footer-dot">·</span> <a href="https://github.com/RugvedTatkare/SupplyChainX" target="_blank" rel="noreferrer">Source repository ↗</a></span></footer>
