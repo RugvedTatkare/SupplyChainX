@@ -74,7 +74,7 @@ function App() {
   const exportSuppliers = () => {
     const header = ['Supplier ID', 'Supplier', 'Category', 'Historical shipments', 'Historical delay rate', 'Demo risk score', 'Demo band', 'Explanation'];
     const rows = visibleSuppliers.map((s) => [s.id, s.name, s.category, s.shipments, s.delay, s.risk, s.band, s.reason]);
-    const csv = [header, ...rows].map((row) => row.map((value) => `"${String(value).replaceAll('"', '""')}"`).join(',')).join('\n');
+    const csv = [header, ...rows].map((row) => row.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(',')).join('\n');
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
     const link = document.createElement('a');
     link.href = url;
