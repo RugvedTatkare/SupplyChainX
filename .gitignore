@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+.env
+.env.*
+!.env.example
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+
+# Frontend
+node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Local databases and runtime data
+*.sqlite
+*.sqlite3
+*.db
+data/local/
+data/private/
+
+# OS/editor
+.DS_Store
+.vscode/
+.idea/
+*.swp
