@@ -10,6 +10,27 @@ import {
 
 type Metric = { label: string; value: number | string; detail?: string };
 type OverviewResponse = Metric[];
+type DashboardResponse = {
+  data_status: 'connected' | 'not_configured' | 'error';
+  data_message: string;
+  kpis: {
+    total_orders: number;
+    supplier_risk_index: number;
+    supplier_count: number;
+    high_risk_suppliers: number;
+    shipment_on_time_rate: number | null;
+    total_shipments: number;
+    delayed_shipments: number;
+    high_risk_inventory_items: number;
+    inventory_snapshot_rows: number;
+    inventory_snapshot_date: string | null;
+    high_critical_risk_events: number;
+  };
+  trend: { month: string; shipments: number; on_time_rate: number; delayed: number }[];
+  suppliers: { supplier_id: string; supplier_name: string; late_delivery_rate: number; risk_score: number; risk_level: string; data_origin: string; synthetic_scenario: string | null }[];
+  risk_signals: { risk_event_id: string; entity_type: string; entity_id: string; risk_type: string; risk_score: number; risk_level: string; explanation: string; event_date: string; data_origin: string }[];
+  provenance: Record<string, string>;
+};
 
 const fallbackTrend = [
   { month: 'Jan', onTime: 88, delayed: 12 },
@@ -41,27 +62,46 @@ function App() {
   const [riskFilter, setRiskFilter] = useState('All risks');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [apiStatus, setApiStatus] = useState<'checking' | 'connected' | 'offline'>('checking');
-  const [apiMetrics, setApiMetrics] = useState<OverviewResponse>([]);
+  const [apiMetrics, setApiMetrics] = useState<OverviewResponse>([]);\n  const [dashboardData, setDashboardData] = useState<DashboardResponse | null>(null);
 
   useEffect(() => {
     const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
-    fetch(`${apiBase}/api/overview`)
-      .then((response) => {
+    Promise.all([
+      fetch(`${apiBase}/api/overview`).then((response) => {
         if (!response.ok) throw new Error('API unavailable');
         return response.json() as Promise<OverviewResponse>;
-      })
-      .then((payload) => {
-        setApiMetrics(payload);
+      }),
+      fetch(`${apiBase}/api/dashboard`).then((response) => {
+        if (!response.ok) throw new Error('Dashboard API unavailable');
+        return response.json() as Promise<DashboardResponse>;
+      }),
+    ])
+      .then(([metrics, dashboard]) => {
+        setApiMetrics(metrics);
+        setDashboardData(dashboard);
         setApiStatus('connected');
       })
       .catch(() => setApiStatus('offline'));
   }, []);
 
-  const visibleSuppliers = useMemo(() => suppliers.filter((supplier) => {
+  const sourceSuppliers = dashboardData?.data_status === 'connected'
+    ? dashboardData.suppliers.map((s) => ({
+        id: s.supplier_id,
+        name: s.supplier_name,
+        category: s.data_origin || 'Source not specified',
+        shipments: '—' as number | string,
+        delay: `${s.late_delivery_rate.toFixed(1)}%`,
+        risk: s.risk_score,
+        band: (s.risk_level.charAt(0) + s.risk_level.slice(1).toLowerCase()) as 'High' | 'Medium' | 'Low',
+        reason: s.synthetic_scenario || s.data_origin || 'Risk score from dataset',
+      }))
+    : suppliers;
+
+  const visibleSuppliers = useMemo(() => sourceSuppliers.filter((supplier) => {
     const matchesQuery = `${supplier.name} ${supplier.id} ${supplier.category}`.toLowerCase().includes(query.toLowerCase());
     const matchesRisk = riskFilter === 'All risks' || supplier.band === riskFilter;
     return matchesQuery && matchesRisk;
-  }), [query, riskFilter]);
+  }), [query, riskFilter, sourceSuppliers]);
 
   const navItems = [
     { label: 'Overview', icon: LayoutDashboard },
@@ -72,13 +112,13 @@ function App() {
   ];
 
   const exportSuppliers = () => {
-    const header = ['Supplier ID', 'Supplier', 'Category', 'Historical shipments', 'Historical delay rate', 'Demo risk score', 'Demo band', 'Explanation'];
+    const header = ['Supplier ID', 'Supplier', 'Data origin / category', 'Historical shipments', 'Historical delay rate', 'Risk score', 'Risk band', 'Explanation'];
     const rows = visibleSuppliers.map((s) => [s.id, s.name, s.category, s.shipments, s.delay, s.risk, s.band, s.reason]);
     const csv = [header, ...rows].map((row) => row.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(',')).join('\n');
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
     const link = document.createElement('a');
     link.href = url;
-    link.download = 'supplychainx-supplier-risk-demo.csv';
+    link.download = 'supplychainx-supplier-risk.csv';
     link.click();
     URL.revokeObjectURL(url);
   };
@@ -145,7 +185,7 @@ function App() {
 
           <div className="notice">
             <div className="notice-icon"><CircleHelp size={17} /></div>
-            <p><strong>Prototype data:</strong> Some supplier and inventory values shown are illustrative. Historical shipment outcomes are retrospective, and these demo risk scores are not live predictions.</p>
+            <p><strong>{dashboardData?.data_status === 'connected' ? 'Data provenance:' : 'Prototype data:'}</strong> {dashboardData?.data_status === 'connected' ? 'Dashboard metrics are calculated from the local SQLite dataset. Historical outcomes are retrospective; supplier and inventory scenario fields may be synthetic.' : 'The SQLite database is not connected. Values shown in fallback sections are illustrative and are not live predictions.'}</p>
             <button onClick={() => setActive('Reports')} aria-label="View data notes">Data notes <span>↗</span></button>
           </div>
 
@@ -156,25 +196,34 @@ function App() {
             </div>
           )}
 
-          <div className="section-title-row"><div><h2>Operational snapshot</h2><p>High-level indicators across the current demo dataset</p></div><span className="updated"><span className="live-dot" /> Sample metrics</span></div>
+          <div className="section-title-row"><div><h2>Operational snapshot</h2><p>High-level indicators from the configured dataset</p></div><span className="updated"><span className="live-dot" /> {dashboardData?.data_status === 'connected' ? 'Database metrics' : 'Sample metrics'}</span></div>
           <div className="kpi-grid">
-            {kpis.map(({ label, value, unit, change, direction, icon: Icon, tone, caption }) => (
-              <article className="kpi-card" key={label}>
-                <div className="kpi-top"><span className={`kpi-icon icon-${tone}`}><Icon size={19} /></span><span className={`change change-${direction}`}>{direction === 'up' ? <ArrowUpRight size={13} /> : <ArrowDownRight size={13} />}{change}</span></div>
-                <div className="kpi-value">{value}<span>{unit}</span></div>
-                <div className="kpi-label">{label}</div>
-                <div className="kpi-caption">{caption}</div>
-              </article>
-            ))}
+            {(() => {
+              const actual = dashboardData?.data_status === 'connected' ? dashboardData.kpis : null;
+              const cards = actual ? [
+                { label: 'Supplier risk index', value: actual.supplier_risk_index.toFixed(1), unit: '/ 100', icon: ShieldAlert, tone: 'amber', caption: 'Mean dataset risk score' },
+                { label: 'Shipment on-time rate', value: actual.shipment_on_time_rate === null ? 'N/A' : actual.shipment_on_time_rate.toFixed(1), unit: actual.shipment_on_time_rate === null ? '' : '%', icon: Truck, tone: 'mint', caption: `${actual.total_shipments.toLocaleString()} historical shipments` },
+                { label: 'High-risk inventory items', value: actual.high_risk_inventory_items.toLocaleString(), unit: '', icon: Boxes, tone: 'violet', caption: actual.inventory_snapshot_date ? `Snapshot: ${actual.inventory_snapshot_date}` : 'Latest inventory snapshot' },
+                { label: 'High/critical risk events', value: actual.high_critical_risk_events.toLocaleString(), unit: '', icon: AlertTriangle, tone: 'rose', caption: 'Recorded risk events' },
+              ] : kpis.map(({ label, value, unit, icon, tone, caption }) => ({ label, value, unit, icon, tone, caption }));
+              return cards.map(({ label, value, unit, icon: Icon, tone, caption }) => (
+                <article className="kpi-card" key={label}>
+                  <div className="kpi-top"><span className={`kpi-icon icon-${tone}`}><Icon size={19} /></span><span className="change change-neutral">{actual ? 'SQLite' : 'Demo'}</span></div>
+                  <div className="kpi-value">{value}<span>{unit}</span></div>
+                  <div className="kpi-label">{label}</div>
+                  <div className="kpi-caption">{caption}</div>
+                </article>
+              ));
+            })()}
           </div>
 
           <div className="middle-grid">
             <section className="panel trend-panel">
-              <div className="panel-heading"><div><h3>Delivery performance</h3><p>Illustrative monthly on-time rate (%)</p></div><button className="icon-button" title="Chart information"><CircleHelp size={17} /></button></div>
+              <div className="panel-heading"><div><h3>Delivery performance</h3><p>{dashboardData?.data_status === 'connected' ? 'Historical monthly on-time rate (%)' : 'Illustrative monthly on-time rate (%)'}</p></div><button className="icon-button" title="Chart information"><CircleHelp size={17} /></button></div>
               <div className="chart-legend"><span><i className="legend-dot ontime" />On-time deliveries</span><span><i className="legend-dot delayed" />Delayed deliveries</span></div>
               <div className="chart-wrap">
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={fallbackTrend} margin={{ top: 8, right: 10, left: -20, bottom: 0 }}>
+                  <LineChart data={dashboardData?.data_status === 'connected' ? dashboardData.trend.map((row) => ({ month: row.month, onTime: row.on_time_rate, delayed: row.delayed })) : fallbackTrend} margin={{ top: 8, right: 10, left: -20, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 5" vertical={false} stroke="#e9edf3" />
                     <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: '#8993a5', fontSize: 11 }} dy={9} />
                     <YAxis domain={[70, 100]} axisLine={false} tickLine={false} tick={{ fill: '#8993a5', fontSize: 11 }} tickFormatter={(v) => `${v}%`} />
@@ -184,7 +233,7 @@ function App() {
                   </LineChart>
                 </ResponsiveContainer>
               </div>
-              <div className="chart-foot"><span>Trend values are illustrative</span><span className="mini-status"><span className="status-dot" /> Demo data</span></div>
+              <div className="chart-foot"><span>{dashboardData?.data_status === 'connected' ? 'Historical records; not a forecast' : 'Trend values are illustrative'}</span><span className="mini-status"><span className="status-dot" /> {dashboardData?.data_status === 'connected' ? 'SQLite data' : 'Demo data'}</span></div>
             </section>
 
             <section className="panel signals-panel">
@@ -200,7 +249,7 @@ function App() {
           </div>
 
           <section className="panel supplier-panel">
-            <div className="panel-heading supplier-heading"><div><h3>Supplier risk register</h3><p>Example suppliers ranked by demo risk score</p></div><button className="text-link" onClick={() => setActive('Supplier Risk')}>Explore suppliers <span>→</span></button></div>
+            <div className="panel-heading supplier-heading"><div><h3>Supplier risk register</h3><p>{dashboardData?.data_status === 'connected' ? 'Suppliers ranked by dataset risk score' : 'Example suppliers ranked by demo risk score'}</p></div><button className="text-link" onClick={() => setActive('Supplier Risk')}>Explore suppliers <span>→</span></button></div>
             <div className="table-tools">
               <div className="search-box"><Search size={16} /><input placeholder="Search suppliers..." value={query} onChange={(event) => setQuery(event.target.value)} aria-label="Search suppliers" /><kbd>⌘ K</kbd></div>
               <label className="filter-select"><span>Risk level</span><select value={riskFilter} onChange={(event) => setRiskFilter(event.target.value)}><option>All risks</option><option>High</option><option>Medium</option><option>Low</option></select><ChevronDown size={13} /></label>
