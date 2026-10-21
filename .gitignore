@@ -24,6 +24,7 @@ frontend/.vite/
 *.db
 data/local/
 data/private/
+backend/data/imported_datasets/
 
 # OS/editor
 .DS_Store

@@ -2,14 +2,16 @@
 from __future__ import annotations
 
 import os
+import json
 import sqlite3
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
 from .schemas import HealthResponse, Metric
+from .services import datasets as dataset_service
 
 app = FastAPI(
     title="SupplyChainX API",
@@ -21,7 +23,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:5174", "http://127.0.0.1:5174"],
     allow_credentials=False,
-    allow_methods=["GET"],
+    allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
 
@@ -196,6 +198,56 @@ def overview() -> list[Metric]:
 
 
 @app.get("/api/dashboard", tags=["analytics"])
-def dashboard() -> dict[str, Any]:
-    """Return database-backed KPIs, historical trend, supplier rankings, and risk signals."""
-    return _dashboard_data()
+def dashboard(dataset_id: str = "original") -> dict[str, Any]:
+    """Return dashboard data for the original database or a selected local import."""
+    if dataset_id == "original":
+        data = _dashboard_data()
+        data.update({"dataset_id": "original", "dataset_kind": "original", "dataset_name": "Original historical dataset"})
+        return data
+    try:
+        return dataset_service.imported_dashboard(dataset_id)
+    except dataset_service.DatasetValidationError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+async def _read_dataset_upload(file: UploadFile) -> tuple[list[str], list[list[str]]]:
+    content = await file.read(dataset_service.MAX_UPLOAD_BYTES + 1)
+    await file.close()
+    try:
+        return dataset_service.parse_upload(file.filename, content)
+    except dataset_service.DatasetValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.get("/api/datasets", tags=["datasets"])
+def datasets() -> list[dict[str, Any]]:
+    """List the original historical source and locally imported datasets."""
+    return dataset_service.list_datasets()
+
+
+@app.post("/api/datasets/preview", tags=["datasets"])
+async def preview_dataset(file: UploadFile = File(...)) -> dict[str, Any]:
+    """Validate and preview a CSV/XLSX upload without storing it."""
+    headers, rows = await _read_dataset_upload(file)
+    return {
+        "filename": dataset_service._safe_filename(file.filename),
+        "columns": headers,
+        "row_count": len(rows),
+        "preview": [dict(zip(headers, row)) for row in rows[:dataset_service.MAX_PREVIEW_ROWS]],
+        "suggested_mappings": dataset_service.suggest_mappings(headers),
+        "supported_fields": dataset_service.FIELD_LABELS,
+    }
+
+
+@app.post("/api/datasets/import", tags=["datasets"])
+async def import_dataset(file: UploadFile = File(...), mappings: str = Form(...)) -> dict[str, Any]:
+    """Validate and save an isolated local copy of a mapped CSV/XLSX dataset."""
+    headers, rows = await _read_dataset_upload(file)
+    try:
+        mapping_values = json.loads(mappings)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail="Column mappings must be valid JSON.") from exc
+    try:
+        return dataset_service.import_dataset(file.filename, headers, rows, mapping_values)
+    except dataset_service.DatasetValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
