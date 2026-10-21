@@ -62,7 +62,8 @@ function App() {
   const [riskFilter, setRiskFilter] = useState('All risks');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [apiStatus, setApiStatus] = useState<'checking' | 'connected' | 'offline'>('checking');
-  const [apiMetrics, setApiMetrics] = useState<OverviewResponse>([]);\n  const [dashboardData, setDashboardData] = useState<DashboardResponse | null>(null);
+  const [apiMetrics, setApiMetrics] = useState<OverviewResponse>([]);
+  const [dashboardData, setDashboardData] = useState<DashboardResponse | null>(null);
 
   useEffect(() => {
     const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
