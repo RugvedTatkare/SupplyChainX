@@ -150,6 +150,8 @@ def _dashboard_data() -> dict[str, Any]:
                 },
                 "trend": trend,
                 "suppliers": suppliers,
+                "shipments": shipments_recent,
+                "inventory": inventory_rows,
                 "risk_signals": signals,
                 "provenance": {
                     "historical": "Shipment and order metrics describe observed historical outcomes, not predictions.",
