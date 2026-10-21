@@ -107,7 +107,7 @@ def _dashboard_data() -> dict[str, Any]:
                        delivery_delay_days, delivery_status, late_delivery_risk, shipping_mode, shipment_status
                 FROM shipments
                 WHERE COALESCE(shipment_status, '') NOT LIKE '%CANCEL%'
-                ORDER BY ship_datetime DESC LIMIT 40
+                ORDER BY ship_datetime DESC
             """)]
             inventory_rows = [dict(row) for row in conn.execute("""
                 SELECT i.inventory_snapshot_id, i.snapshot_date, i.warehouse_id, i.product_id,
@@ -130,7 +130,7 @@ def _dashboard_data() -> dict[str, Any]:
                 FROM risk_events
                 ORDER BY CASE UPPER(risk_level)
                     WHEN 'CRITICAL' THEN 0 WHEN 'HIGH' THEN 1 WHEN 'MEDIUM' THEN 2 ELSE 3 END,
-                    event_date DESC LIMIT 8
+                    event_date DESC
             """)]
             return {
                 "data_status": "connected",
