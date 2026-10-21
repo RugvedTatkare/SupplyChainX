@@ -149,7 +149,7 @@ function App() {
         <nav className="main-nav" aria-label="Main navigation">
           {navItems.map(({ label, icon: Icon }) => (
             <button key={label} className={`nav-item ${active === label ? 'active' : ''}`} onClick={() => { setActive(label); setSidebarOpen(false); }}>
-              <Icon size={18} /><span>{label}</span>{label === 'Risk Signals' && <span className="nav-count">5</span>}
+              <Icon size={18} /><span>{label}</span>{label === 'Risk Signals' && <span className="nav-count">{dashboardData?.data_status === 'connected' ? sourceSignals.length.toLocaleString() : '—'}</span>}
             </button>
           ))}
         </nav>
